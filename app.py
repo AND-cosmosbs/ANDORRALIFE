@@ -20,7 +20,7 @@ st.title("Catálogo de productos")
 data = supabase.table("productos").select("*").execute()
 productos = pd.DataFrame(data.data)
 
-# Obtener valores únicos de 'Familia' (el filtro)
+# Obtener valores únicos de 'Familia'
 familias = productos["Familia"].dropna().unique().tolist()
 familia_sel = st.selectbox("Selecciona una familia", [""] + sorted(familias))
 
@@ -42,7 +42,7 @@ for _, row in productos.iterrows():
         with cols[1]:
             st.subheader(row.get("Nombre", ""))
             st.write(f"**Referencia:** {row.get('Referencia', '')}")
-            st.write(f"**Precio:** {row.get('PVP1', '')} €")
+            st.write(f"**Precio:** {row.get('PVP1', '')} EUR")
             st.write(f"**Descripción:** {row.get('Descripcion Web', '')}")
 
 # Función para generar PDF
@@ -57,7 +57,7 @@ def generar_pdf(df, familia):
         pdf.set_font("Arial", "B", 12)
         pdf.cell(0, 10, row.get("Nombre", ""), ln=True)
 
-        # Insertar imagen
+        # Imagen
         if row.get("URL Foto"):
             try:
                 response = requests.get(row["URL Foto"])
@@ -72,7 +72,7 @@ def generar_pdf(df, familia):
         # Info del producto
         pdf.set_font("Arial", "", 11)
         pdf.multi_cell(0, 8, f"Referencia: {row.get('Referencia', '')}")
-        pdf.multi_cell(0, 8, f"Precio: {row.get('PVP1', '')} €")
+        pdf.multi_cell(0, 8, f"Precio: {row.get('PVP1', '')} EUR")
         descripcion = row.get("Descripcion Web", "")
         if descripcion:
             pdf.multi_cell(0, 8, f"Descripción: {descripcion}")
