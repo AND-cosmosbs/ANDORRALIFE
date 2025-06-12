@@ -44,23 +44,25 @@ for _, row in productos.iterrows():
             st.write(f"**Precio:** {row.get('PVP1', '')} EUR")
             st.write(f"**Descripción:** {row.get('Descripcion Web', '')}")
 
-# PDF personalizado con cabecera
+# Clase personalizada con cabecera con logo
 class PDF(FPDF):
     def header(self):
         try:
-            self.image("logo_andorralife.png", x=10, y=8, w=40)
-            self.set_font("Arial", "B", 12)
-            self.cell(0, 10, "Catálogo de productos - Andorralife", ln=True, align="R")
-            self.ln(10)
-        except:
-            pass
+            logo_path = os.path.join(os.path.dirname(__file__), "Logo_Cabecera.png")
+            self.image(logo_path, x=10, y=8, w=40)
+        except Exception as e:
+            print("No se pudo cargar el logo:", e)
+
+        self.set_font("Arial", "B", 12)
+        self.cell(0, 10, "Catálogo de productos - Andorralife", ln=True, align="R")
+        self.ln(10)
 
     def footer(self):
         self.set_y(-15)
         self.set_font("Arial", "I", 8)
         self.cell(0, 10, f'Página {self.page_no()}', align='C')
 
-# Función para generar PDF
+# Generar el PDF
 def generar_pdf(df):
     pdf = PDF()
     pdf.set_auto_page_break(auto=True, margin=20)
