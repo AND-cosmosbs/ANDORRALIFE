@@ -20,17 +20,16 @@ st.title("Catálogo de productos")
 data = supabase.table("productos").select("*").execute()
 productos = pd.DataFrame(data.data)
 
-# Obtener valores únicos de 'Familia'
+# Filtro por familia
 familias = productos["Familia"].dropna().unique().tolist()
 familia_sel = st.selectbox("Selecciona una familia", [""] + sorted(familias))
 
-# Filtrar si hay selección
+# Filtrar productos
 if familia_sel:
     productos = productos[productos["Familia"] == familia_sel]
 
-# Mostrar resultados
+# Mostrar productos
 st.markdown(f"### Resultados: {len(productos)} producto(s) encontrado(s)")
-
 for _, row in productos.iterrows():
     with st.container():
         cols = st.columns([1, 3])
@@ -45,19 +44,33 @@ for _, row in productos.iterrows():
             st.write(f"**Precio:** {row.get('PVP1', '')} EUR")
             st.write(f"**Descripción:** {row.get('Descripcion Web', '')}")
 
+# PDF personalizado con cabecera
+class PDF(FPDF):
+    def header(self):
+        try:
+            self.image("logo_andorralife.png", x=10, y=8, w=40)
+            self.set_font("Arial", "B", 12)
+            self.cell(0, 10, "Catálogo de productos - Andorralife", ln=True, align="R")
+            self.ln(10)
+        except:
+            pass
+
+    def footer(self):
+        self.set_y(-15)
+        self.set_font("Arial", "I", 8)
+        self.cell(0, 10, f'Página {self.page_no()}', align='C')
+
 # Función para generar PDF
-def generar_pdf(df, familia):
-    pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
+def generar_pdf(df):
+    pdf = PDF()
+    pdf.set_auto_page_break(auto=True, margin=20)
     pdf.add_page()
-    pdf.set_font("Arial", "B", 16)
-    pdf.cell(0, 10, f"Catálogo de productos - {familia}", ln=True)
 
     for _, row in df.iterrows():
         pdf.set_font("Arial", "B", 12)
         pdf.cell(0, 10, row.get("Nombre", ""), ln=True)
 
-        # Imagen
+        # Imagen del producto
         if row.get("URL Foto"):
             try:
                 response = requests.get(row["URL Foto"])
@@ -66,10 +79,9 @@ def generar_pdf(df, familia):
                     img.save(tmp.name)
                     pdf.image(tmp.name, w=50)
                     os.unlink(tmp.name)
-            except Exception:
+            except:
                 pass
 
-        # Info del producto
         pdf.set_font("Arial", "", 11)
         pdf.multi_cell(0, 8, f"Referencia: {row.get('Referencia', '')}")
         pdf.multi_cell(0, 8, f"Precio: {row.get('PVP1', '')} EUR")
@@ -84,7 +96,7 @@ def generar_pdf(df, familia):
 if not productos.empty:
     if st.button("📄 Generar PDF del catálogo"):
         titulo = familia_sel if familia_sel else "completo"
-        pdf = generar_pdf(productos, titulo)
+        pdf = generar_pdf(productos)
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as f:
             pdf.output(f.name)
             with open(f.name, "rb") as file:
