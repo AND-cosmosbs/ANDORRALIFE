@@ -16,47 +16,48 @@ supabase = create_client(url, key)
 st.set_page_config(layout="wide")
 st.title("Catálogo de productos")
 
-# Cargar datos
+# Cargar datos desde Supabase
 data = supabase.table("productos").select("*").execute()
 productos = pd.DataFrame(data.data)
 
-# Filtros únicos
-subcategorias = productos["Subcategoría"].dropna().unique().tolist()
-subcategoria_sel = st.selectbox("Selecciona una subcategoría", [""] + sorted(subcategorias))
+# Obtener valores únicos de 'Familia' (el filtro)
+familias = productos["Familia"].dropna().unique().tolist()
+familia_sel = st.selectbox("Selecciona una familia", [""] + sorted(familias))
 
-# Filtrar por subcategoría si se selecciona
-if subcategoria_sel:
-    productos = productos[productos["Subcategoría"] == subcategoria_sel]
+# Filtrar si hay selección
+if familia_sel:
+    productos = productos[productos["Familia"] == familia_sel]
 
-# Mostrar productos filtrados
+# Mostrar resultados
 st.markdown(f"### Resultados: {len(productos)} producto(s) encontrado(s)")
+
 for _, row in productos.iterrows():
     with st.container():
         cols = st.columns([1, 3])
         with cols[0]:
-            if row["URL Foto"]:
+            if row.get("URL Foto"):
                 st.image(row["URL Foto"], width=150)
             else:
                 st.text("Sin imagen")
         with cols[1]:
-            st.subheader(row["Nombre"])
-            st.write(f"**Referencia:** {row['Referencia']}")
-            st.write(f"**Precio:** {row['PVP1']} €")
+            st.subheader(row.get("Nombre", ""))
+            st.write(f"**Referencia:** {row.get('Referencia', '')}")
+            st.write(f"**Precio:** {row.get('PVP1', '')} €")
             st.write(f"**Descripción:** {row.get('Descripcion Web', '')}")
 
-# Generar PDF
-def generar_pdf(df, subcategoria):
+# Función para generar PDF
+def generar_pdf(df, familia):
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     pdf.set_font("Arial", "B", 16)
-    pdf.cell(0, 10, f"Catálogo de productos - {subcategoria}", ln=True)
+    pdf.cell(0, 10, f"Catálogo de productos - {familia}", ln=True)
 
     for _, row in df.iterrows():
         pdf.set_font("Arial", "B", 12)
-        pdf.cell(0, 10, row["Nombre"], ln=True)
+        pdf.cell(0, 10, row.get("Nombre", ""), ln=True)
 
-        # Imagen
+        # Insertar imagen
         if row.get("URL Foto"):
             try:
                 response = requests.get(row["URL Foto"])
@@ -68,9 +69,10 @@ def generar_pdf(df, subcategoria):
             except Exception:
                 pass
 
+        # Info del producto
         pdf.set_font("Arial", "", 11)
-        pdf.multi_cell(0, 8, f"Referencia: {row['Referencia']}")
-        pdf.multi_cell(0, 8, f"Precio: {row['PVP1']} €")
+        pdf.multi_cell(0, 8, f"Referencia: {row.get('Referencia', '')}")
+        pdf.multi_cell(0, 8, f"Precio: {row.get('PVP1', '')} €")
         descripcion = row.get("Descripcion Web", "")
         if descripcion:
             pdf.multi_cell(0, 8, f"Descripción: {descripcion}")
@@ -78,16 +80,17 @@ def generar_pdf(df, subcategoria):
 
     return pdf
 
-# Botón para generar y descargar el PDF
-if subcategoria_sel and not productos.empty:
+# Botón para generar PDF
+if not productos.empty:
     if st.button("📄 Generar PDF del catálogo"):
-        pdf = generar_pdf(productos, subcategoria_sel)
+        titulo = familia_sel if familia_sel else "completo"
+        pdf = generar_pdf(productos, titulo)
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as f:
             pdf.output(f.name)
             with open(f.name, "rb") as file:
                 st.download_button(
                     "⬇️ Descargar catálogo PDF",
                     file.read(),
-                    file_name=f"catalogo_{subcategoria_sel}.pdf",
+                    file_name=f"catalogo_{titulo}.pdf",
                     mime="application/pdf"
                 )
