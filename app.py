@@ -12,7 +12,7 @@ SUPABASE_URL = "https://emgqseferyrvnqekdbcm.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVtZ3FzZWZlcnlydm5xZWtkYmNtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk1NTU4MjEsImV4cCI6MjA2NTEzMTgyMX0.58IeQ-nZKn8UWEnV2Fdo0asB1eOGOFNkmxVd6ln0158"
 HEADERS = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json"}
 
-# Cargar datos
+# Cargar datos de productos y clientes
 @st.cache_data(ttl=600)
 def cargar_tabla(nombre_tabla):
     url = f"{SUPABASE_URL}/rest/v1/{nombre_tabla}?select=*"
@@ -22,17 +22,17 @@ def cargar_tabla(nombre_tabla):
 df_productos = cargar_tabla("productos")
 df_clientes = cargar_tabla("clientes")
 
-# Carrito
+# Carrito en estado de sesión
 if "carrito" not in st.session_state:
     st.session_state.carrito = []
 
-# Filtro
+# Filtro por familia
 familia_sel = st.selectbox("Filtrar por familia:", sorted(df_productos["Familia"].dropna().unique()))
 productos_filtrados = df_productos[df_productos["Familia"] == familia_sel]
 
 st.title(f"Catálogo de productos: {familia_sel}")
 
-# Mostrar productos
+# Mostrar productos con botón de añadir al carrito
 for _, row in productos_filtrados.iterrows():
     with st.container():
         cols = st.columns([1, 3, 1])
@@ -49,23 +49,25 @@ for _, row in productos_filtrados.iterrows():
                 st.session_state.carrito.append({
                     "ref": row["Referencia"],
                     "nombre": row["Nombre"],
-                    "precio": float(row["PVP1"]) if pd.notna(row["PVP1"]) else 0.0,
+                    "precio": row["PVP1"],
                     "url": row["URL Foto"]
                 })
 
-# Carrito
+# Mostrar carrito actual
 st.subheader("🛒 Carrito")
 if st.session_state.carrito:
     carrito_df = pd.DataFrame(st.session_state.carrito)
     st.dataframe(carrito_df)
 
-    # Cliente
+    # Selección de cliente
     cliente_sel = st.selectbox("Seleccionar cliente:", df_clientes["nombre"].dropna().unique())
     datos_cliente = df_clientes[df_clientes["nombre"] == cliente_sel].iloc[0]
 
+    # Botón para generar factura
     if st.button("📄 Generar albarán/factura simple"):
         pdf = FPDF()
         pdf.add_page()
+
         try:
             pdf.image("Logo_Cabecera.png", x=10, y=8, w=40)
         except:
@@ -84,40 +86,46 @@ if st.session_state.carrito:
         for item in st.session_state.carrito:
             descripcion = f"{item['ref']} - {item['nombre']} - {item['precio']} €"
             pdf.cell(0, 8, descripcion.encode('latin-1', 'replace').decode('latin-1'), ln=True)
-            total += item["precio"]
+            total += float(item["precio"]) if item["precio"] else 0
 
         pdf.ln(5)
         total_str = f"TOTAL: {round(total, 2)} €"
         pdf.cell(0, 10, total_str.encode('latin-1', 'replace').decode('latin-1'), ln=True)
 
-        # Guardar en Supabase
+        # Guardar en Supabase: tabla pedidos y lineas_pedido
         pedido_id = str(uuid.uuid4())
+
+        # Insertar pedido
         pedido_data = {
             "id": pedido_id,
             "fecha": datetime.now().strftime('%Y-%m-%d'),
-            "cliente_id": int(datos_cliente['id']),
-            "total": float(round(total, 2))
+            "cliente_id": datos_cliente['id'],
+            "total": round(total, 2)
         }
         response_pedido = requests.post(f"{SUPABASE_URL}/rest/v1/pedidos", headers=HEADERS, json=pedido_data)
 
+        # Insertar líneas de pedido
         for item in st.session_state.carrito:
             linea = {
                 "pedido_id": pedido_id,
                 "referencia": item['ref'],
                 "descripcion": item['nombre'],
-                "precio": float(item['precio'])
+                "precio": item['precio']
             }
             requests.post(f"{SUPABASE_URL}/rest/v1/lineas_pedido", headers=HEADERS, json=linea)
 
-        buffer = BytesIO()
-        pdf.output(buffer)
+        # Generar PDF y descargar
+        pdf_bytes = pdf.output(dest='S').encode('latin1')
+        buffer = BytesIO(pdf_bytes)
         st.download_button("⬇️ Descargar PDF de la factura", data=buffer.getvalue(), file_name="factura.pdf", mime="application/pdf")
 
+        # Vaciar carrito después de guardar
         st.session_state.carrito = []
 
+        # Confirmación visual
         if response_pedido.status_code == 201:
-            st.success("✅ Pedido guardado correctamente.")
+            st.success("✅ Pedido guardado correctamente en la base de datos.")
         else:
-            st.error("❌ Error al guardar el pedido.")
+            st.error("❌ Error al guardar el pedido. Revisa la conexión o los datos.")
 else:
     st.info("Añade productos al carrito para continuar.")
