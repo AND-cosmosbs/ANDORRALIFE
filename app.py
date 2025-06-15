@@ -5,11 +5,12 @@ from fpdf import FPDF
 from io import BytesIO
 from PIL import Image
 from datetime import datetime
+import uuid
 
 # Configuración de conexión
 SUPABASE_URL = "https://emgqseferyrvnqekdbcm.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVtZ3FzZWZlcnlydm5xZWtkYmNtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk1NTU4MjEsImV4cCI6MjA2NTEzMTgyMX0.58IeQ-nZKn8UWEnV2Fdo0asB1eOGOFNkmxVd6ln0158"
-HEADERS = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
+HEADERS = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json"}
 
 # Cargar datos de productos y clientes
 @st.cache_data(ttl=600)
@@ -45,7 +46,12 @@ for _, row in productos_filtrados.iterrows():
             st.markdown(f"**Precio:** {row.get('PVP1', '')} €")
         with cols[2]:
             if st.button(f"➕ Añadir {row['Referencia']}", key=row['Referencia']):
-                st.session_state.carrito.append({"ref": row["Referencia"], "nombre": row["Nombre"], "precio": row["PVP1"], "url": row["URL Foto"]})
+                st.session_state.carrito.append({
+                    "ref": row["Referencia"],
+                    "nombre": row["Nombre"],
+                    "precio": row["PVP1"],
+                    "url": row["URL Foto"]
+                })
 
 # Mostrar carrito actual
 st.subheader("🛒 Carrito")
@@ -78,14 +84,47 @@ if st.session_state.carrito:
 
         total = 0
         for item in st.session_state.carrito:
-            pdf.cell(0, 8, f"{item['ref']} - {item['nombre']} - {item['precio']} €", ln=True)
+            descripcion = f"{item['ref']} - {item['nombre']} - {item['precio']} €"
+            pdf.cell(0, 8, descripcion.encode('latin-1', 'replace').decode('latin-1'), ln=True)
             total += float(item["precio"]) if item["precio"] else 0
 
         pdf.ln(5)
-        pdf.cell(0, 10, f"TOTAL: {round(total, 2)} €", ln=True)
+        total_str = f"TOTAL: {round(total, 2)} €"
+        pdf.cell(0, 10, total_str.encode('latin-1', 'replace').decode('latin-1'), ln=True)
+
+        # Guardar en Supabase: tabla pedidos y lineas_pedido
+        pedido_id = str(uuid.uuid4())
+
+        # Insertar pedido
+        pedido_data = {
+            "id": pedido_id,
+            "fecha": datetime.now().strftime('%Y-%m-%d'),
+            "cliente_id": datos_cliente['id'],
+            "total": round(total, 2)
+        }
+        response_pedido = requests.post(f"{SUPABASE_URL}/rest/v1/pedidos", headers=HEADERS, json=pedido_data)
+
+        # Insertar líneas de pedido
+        for item in st.session_state.carrito:
+            linea = {
+                "pedido_id": pedido_id,
+                "referencia": item['ref'],
+                "descripcion": item['nombre'],
+                "precio": item['precio']
+            }
+            requests.post(f"{SUPABASE_URL}/rest/v1/lineas_pedido", headers=HEADERS, json=linea)
 
         buffer = BytesIO()
         pdf.output(buffer)
         st.download_button("⬇️ Descargar PDF de la factura", data=buffer.getvalue(), file_name="factura.pdf", mime="application/pdf")
+
+        # Vaciar carrito después de guardar
+        st.session_state.carrito = []
+
+        # Confirmación visual
+        if response_pedido.status_code == 201:
+            st.success("✅ Pedido guardado correctamente en la base de datos.")
+        else:
+            st.error("❌ Error al guardar el pedido. Revisa la conexión o los datos.")
 else:
     st.info("Añade productos al carrito para continuar.")
