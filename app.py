@@ -49,7 +49,7 @@ for _, row in productos_filtrados.iterrows():
                 st.session_state.carrito.append({
                     "ref": row["Referencia"],
                     "nombre": row["Nombre"],
-                    "precio": row["PVP1"],
+                    "precio": float(row["PVP1"]) if pd.notnull(row["PVP1"]) else 0,
                     "url": row["URL Foto"]
                 })
 
@@ -95,34 +95,32 @@ if st.session_state.carrito:
         # Guardar en Supabase: tabla pedidos y lineas_pedido
         pedido_id = str(uuid.uuid4())
 
-        # Insertar pedido
+        # ✅ Convertir a tipos nativos antes de enviar a Supabase
         pedido_data = {
             "id": pedido_id,
             "fecha": datetime.now().strftime('%Y-%m-%d'),
-            "cliente_id": datos_cliente['id'],
-            "total": round(total, 2)
+            "cliente_id": int(datos_cliente['id']),
+            "total": float(round(total, 2))
         }
+
         response_pedido = requests.post(f"{SUPABASE_URL}/rest/v1/pedidos", headers=HEADERS, json=pedido_data)
 
-        # Insertar líneas de pedido
         for item in st.session_state.carrito:
             linea = {
                 "pedido_id": pedido_id,
                 "referencia": item['ref'],
                 "descripcion": item['nombre'],
-                "precio": item['precio']
+                "precio": float(item['precio']) if item['precio'] else 0
             }
             requests.post(f"{SUPABASE_URL}/rest/v1/lineas_pedido", headers=HEADERS, json=linea)
 
-        # Generar PDF y descargar
-        pdf_bytes = pdf.output(dest='S').encode('latin1')
+        # Generar PDF y permitir descarga
+        pdf_bytes = pdf.output(dest='S').encode('latin-1')
         buffer = BytesIO(pdf_bytes)
         st.download_button("⬇️ Descargar PDF de la factura", data=buffer.getvalue(), file_name="factura.pdf", mime="application/pdf")
 
-        # Vaciar carrito después de guardar
         st.session_state.carrito = []
 
-        # Confirmación visual
         if response_pedido.status_code == 201:
             st.success("✅ Pedido guardado correctamente en la base de datos.")
         else:
